@@ -101,6 +101,7 @@ module Sprockets
       #
       # Directives in comments after the first non-whitespace line
       # of code will not be processed.
+      ## compile comments regext
       def compile_header_pattern(comments)
         re = comments.map { |c|
           case c
@@ -118,7 +119,7 @@ module Sprockets
       def process_source(source)
         header = source[@header_pattern, 0] || ""
         body   = $' || source
-
+        ## use regext to extract directives
         header, directives = extract_directives(header)
 
         data = String.new("")
@@ -143,8 +144,11 @@ module Sprockets
         directives = []
 
         header.lines.each_with_index do |line, index|
+          ## use String.[] to capture directive
           if directive = line[DIRECTIVE_PATTERN, 1]
             name, *args = Shellwords.shellwords(directive)
+            ## if we can respond_to process_#{name}_directive
+            ## it will be a directive
             if respond_to?("process_#{name}_directive", true)
               directives << [index + 1, name, *args]
               # Replace directive line with a clean break
