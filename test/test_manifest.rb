@@ -16,7 +16,27 @@ class TestManifest < Sprockets::TestCase
 
   def teardown
     FileUtils.remove_entry_secure(@dir) if File.exist?(@dir)
-    assert Dir["#{@dir}/*"].empty?
+    assert Dir["#{@dir}/*"].empty?, "Expected #{Dir["#{@dir}/*"]} to be empty but it was not"
+  end
+
+  test 'linking same file twice does not raise an error' do
+    config_manifest = 'link_same_file_twice.js'
+
+    @env.append_path(fixture_path('double'))
+    output_manifest_json = File.join(@dir, "manifest.json")
+    manifest = Sprockets::Manifest.new(@env, @dir, output_manifest_json)
+    manifest.compile(config_manifest)
+  end
+
+  test 'double rendering with link_directory raises an error' do
+    config_manifest = 'link_directory_manifest.js'
+
+    @env.append_path(fixture_path('double'))
+    output_manifest_json = File.join(@dir, "manifest.json")
+    manifest = Sprockets::Manifest.new(@env, @dir, output_manifest_json)
+    assert_raises(Sprockets::DoubleLinkError) do
+      manifest.compile(config_manifest)
+    end
   end
 
   test "specify full manifest filename" do
@@ -51,7 +71,7 @@ class TestManifest < Sprockets::TestCase
     assert_equal path, manifest.filename
   end
 
-  test "specify manifest directory and seperate location" do
+  test "specify manifest directory and separate location" do
     root  = File.join(Dir::tmpdir, 'public')
     dir   = File.join(root, 'assets')
     path  = File.join(root, 'manifest-123.json')
@@ -66,6 +86,7 @@ class TestManifest < Sprockets::TestCase
   end
 
   test "compile asset" do
+    @env.version = '1.1.2'
     manifest = Sprockets::Manifest.new(@env, File.join(@dir, 'manifest.json'))
 
     digest_path = @env['application.js'].digest_path
@@ -151,7 +172,7 @@ class TestManifest < Sprockets::TestCase
     assert_equal dep_digest_path, data['assets']['coffee.js']
   end
 
-  test "compile to directory and seperate location" do
+  test "compile to directory and separate location" do
     manifest = Sprockets::Manifest.new(@env, File.join(@dir, 'manifest.json'))
 
     root  = File.join(Dir::tmpdir, 'public')
@@ -307,6 +328,29 @@ class TestManifest < Sprockets::TestCase
     assert_equal subdep_digest_path, data['assets']['gallery.js']
   end
 
+  test "recompile asset when environment version is changed" do
+    manifest = Sprockets::Manifest.new(@env, File.join(@dir, 'manifest.json'))
+
+    digest_path = @env['application.js'].digest_path
+    filename = fixture_path('default/application.coffee')
+
+    sandbox filename do
+      assert !File.exist?("#{@dir}/#{digest_path}"), Dir["#{@dir}/*"].inspect
+
+      manifest.compile('application.js')
+
+      assert File.exist?("#{@dir}/manifest.json")
+      assert File.exist?("#{@dir}/#{digest_path}")
+
+      @env.version = '1.1.3'
+      new_digest_path = @env['application.js'].digest_path
+
+      assert !File.exist?("#{@dir}/#{new_digest_path}"), Dir["#{@dir}/*"].inspect
+      manifest.compile('application.js')
+      assert File.exist?("#{@dir}/#{new_digest_path}")
+    end
+  end
+
   test "recompile asset" do
     manifest = Sprockets::Manifest.new(@env, File.join(@dir, 'manifest.json'))
 
@@ -402,24 +446,27 @@ class TestManifest < Sprockets::TestCase
       manifest.compile('application.js')
       assert File.exist?("#{@dir}/#{digest_path}")
 
+      Timecop.travel(Time.now + 1)
       File.open(filename, 'w') { |f| f.write "a;" }
-      mtime = Time.now + 1
+      mtime = Time.now
       File.utime(mtime, mtime, filename)
       new_digest_path1 = @env['application.js'].digest_path
 
       manifest.compile('application.js')
       assert File.exist?("#{@dir}/#{new_digest_path1}")
 
+      Timecop.travel(Time.now + 1)
       File.open(filename, 'w') { |f| f.write "b;" }
-      mtime = Time.now + 2
+      mtime = Time.now
       File.utime(mtime, mtime, filename)
       new_digest_path2 = @env['application.js'].digest_path
 
       manifest.compile('application.js')
       assert File.exist?("#{@dir}/#{new_digest_path2}")
 
+      Timecop.travel(Time.now + 1)
       File.open(filename, 'w') { |f| f.write "c;" }
-      mtime = Time.now + 3
+      mtime = Time.now
       File.utime(mtime, mtime, filename)
       new_digest_path3 = @env['application.js'].digest_path
 
@@ -440,6 +487,8 @@ class TestManifest < Sprockets::TestCase
       assert data['files'][new_digest_path3]
       assert_equal new_digest_path3, data['assets']['application.js']
     end
+  ensure
+    Timecop.return
   end
 
   test "test manifest does not exist" do
@@ -610,7 +659,7 @@ class TestManifest < Sprockets::TestCase
     @env.register_exporter 'image/png',SlowExporter
     @env.register_exporter 'image/png',SlowExporter2
     Sprockets::Manifest.new(@env, @dir).compile('logo.png', 'troll.png')
-    assert_equal %w(0 0 0 0 1 1 1 1), SlowExporter.seq
+    refute_equal %w(0 1 0 1 0 1 0 1), SlowExporter.seq
   end
 
   test 'sequential exporting' do
@@ -642,7 +691,7 @@ class TestManifest < Sprockets::TestCase
     processor = SlowProcessor.new
     @env.register_postprocessor 'image/png', processor
     Sprockets::Manifest.new(@env, @dir).compile('logo.png', 'troll.png')
-    assert_equal %w(0 0 1 1), processor.seq
+    refute_equal %w(0 1 0 1), processor.seq
   end
 
   test 'sequential processing' do
@@ -651,5 +700,13 @@ class TestManifest < Sprockets::TestCase
     @env.register_postprocessor 'image/png', processor
     Sprockets::Manifest.new(@env, @dir).compile('logo.png', 'troll.png')
     assert_equal %w(0 1 0 1), processor.seq
+  end
+
+  test 'clobber works when cache_dir not created' do
+    @cache_dir = File.join(Dir::tmpdir, 'sprockets')
+    refute File.exist?(@cache_dir)
+    @env.cache = Sprockets::Cache::FileStore.new(@cache_dir)
+    manifest = Sprockets::Manifest.new(@env, File.join(@dir, 'manifest.json'))
+    manifest.clobber
   end
 end

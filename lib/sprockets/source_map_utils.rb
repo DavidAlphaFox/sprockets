@@ -48,7 +48,7 @@ module Sprockets
         "sources"  => map["sources"].map do |source|
           source = URIUtils.split_file_uri(source)[2] if source.start_with? "file://"
           source = PathUtils.join(File.dirname(filename), source) unless PathUtils.absolute_path?(source)
-          _, source = PathUtils.paths_split(load_paths, source) 
+          _, source = PathUtils.paths_split(load_paths, source)
           source = PathUtils.relative_path_from(file, source)
           PathUtils.set_pipeline(source, mime_exts, pipeline_exts, :source)
         end,
@@ -72,13 +72,16 @@ module Sprockets
     # Returns a new source map hash.
     def concat_source_maps(a, b)
       return a || b unless a && b
-      a, b = make_index_map(a), make_index_map(b)
+      a = make_index_map(a)
+      b = make_index_map(b)
 
-      if a["sections"].count == 0 || a["sections"].last["map"]["mappings"].empty?
-        offset = 0
-      else
-        offset = a["sections"].last["map"]["mappings"].count(';') + 
-                 a["sections"].last["offset"]["line"] + 1
+      offset = 0
+      if a["sections"].count != 0 && !a["sections"].last["map"]["mappings"].empty?
+        last_line_count = a["sections"].last["map"].delete("x_sprockets_linecount")
+        offset += last_line_count || 1
+
+        last_offset = a["sections"].last["offset"]["line"]
+        offset += last_offset
       end
 
       a["sections"] += b["sections"].map do |section|
@@ -137,7 +140,7 @@ module Sprockets
       }
     end
 
-    # Public: Combine two seperate source map transformations into a single
+    # Public: Combine two separate source map transformations into a single
     # mapping.
     #
     # Source transformations may happen in discrete steps producing separate
@@ -425,21 +428,23 @@ module Sprockets
     # Returns an Array of Integers.
     def vlq_decode(str)
       result = []
-      chars = str.split('')
-      while chars.any?
-        vlq = 0
-        shift = 0
-        continuation = true
-        while continuation
-          char = chars.shift
-          raise ArgumentError unless char
-          digit = BASE64_VALUES[char]
-          continuation = false if (digit & VLQ_CONTINUATION_BIT) == 0
-          digit &= VLQ_BASE_MASK
-          vlq   += digit << shift
+      shift = 0
+      value = 0
+      i = 0
+
+      while i < str.size do
+        digit = BASE64_VALUES[str[i]]
+        raise ArgumentError unless digit
+        continuation = (digit & VLQ_CONTINUATION_BIT) != 0
+        digit &= VLQ_BASE_MASK
+          value += digit << shift
+        if continuation
           shift += VLQ_BASE_SHIFT
+        else
+          result << ((value & 1) == 1 ? -(value >> 1) : value >> 1)
+          value = shift = 0
         end
-        result << (vlq & 1 == 1 ? -(vlq >> 1) : vlq >> 1)
+        i += 1
       end
       result
     end
@@ -448,7 +453,7 @@ module Sprockets
     #
     # ary - Two dimensional Array of Integers.
     #
-    # Returns a VLQ encoded String seperated by , and ;.
+    # Returns a VLQ encoded String separated by , and ;.
     def vlq_encode_mappings(ary)
       ary.map { |group|
         group.map { |segment|

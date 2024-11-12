@@ -5,7 +5,7 @@ require 'sprockets/cache'
 require 'sprockets/erb_processor'
 require 'sass'
 
-class TestERBProcessor < MiniTest::Test
+class TestERBProcessor < Minitest::Test
 
   def uri_path(path)
     path = '/' + path if path[1] == ':' # Windows path / drive letter
@@ -32,6 +32,10 @@ class TestERBProcessor < MiniTest::Test
     old_env_value = ::ENV['ERB_ENV_TEST_VALUE']
     ::ENV['ERB_ENV_TEST_VALUE'] = 'success'
 
+    if RUBY_ENGINE == 'truffleruby' and Gem::Version.new(RUBY_ENGINE_VERSION) < Gem::Version.new('23.0.0.a')
+      skip 'https://github.com/oracle/truffleruby/issues/2810'
+    end
+
     root = File.expand_path("../fixtures", __FILE__)
     environment = Sprockets::Environment.new(root)
     environment.append_path 'default'
@@ -55,6 +59,10 @@ class TestERBProcessor < MiniTest::Test
 
   def test_compile_erb_template_that_depends_on_empty_env
     old_env_value = ::ENV.delete('ERB_ENV_TEST_VALUE')
+
+    if RUBY_ENGINE == 'truffleruby' and Gem::Version.new(RUBY_ENGINE_VERSION) < Gem::Version.new('23.0.0.a')
+      skip 'https://github.com/oracle/truffleruby/issues/2810'
+    end
 
     root = File.expand_path("../fixtures", __FILE__)
     environment = Sprockets::Environment.new(root)

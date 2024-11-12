@@ -25,7 +25,7 @@ module Sprockets
 
     # Internal: Duplicate and store key/value on new frozen hash.
     #
-    # Seperated for recursive calls, always use hash_reassoc(hash, *keys).
+    # Separated for recursive calls, always use hash_reassoc(hash, *keys).
     #
     # hash - Hash
     # key  - Object key
@@ -68,6 +68,9 @@ module Sprockets
       end
     end
 
+    WHITESPACE_ORDINALS = {0x0A => "\n", 0x20 => " ", 0x09 => "\t"}
+    private_constant :WHITESPACE_ORDINALS
+
     # Internal: Check if string has a trailing semicolon.
     #
     # str - String
@@ -79,14 +82,9 @@ module Sprockets
         c = str[i].ord
         i -= 1
 
-        # Need to compare against the ordinals because the string can be UTF_8 or UTF_32LE encoded
-        # 0x0A == "\n"
-        # 0x20 == " "
-        # 0x09 == "\t"
-        # 0x3B == ";"
-        unless c == 0x0A || c == 0x20 || c == 0x09
-          return c === 0x3B
-        end
+        next if WHITESPACE_ORDINALS[c]
+
+        return c === 0x3B
       end
 
       true
@@ -100,22 +98,28 @@ module Sprockets
     #
     # Returns buf String.
     def concat_javascript_sources(buf, source)
-      if source.bytesize > 0
-        buf << source
+      return buf if source.bytesize <= 0
 
-        # If the source contains non-ASCII characters, indexing on it becomes O(N).
-        # This will lead to O(N^2) performance in string_end_with_semicolon?, so we should use 32 bit encoding to make sure indexing stays O(1)
-        source = source.encode(Encoding::UTF_32LE) unless source.ascii_only?
+      buf << source
+      # If the source contains non-ASCII characters, indexing on it becomes O(N).
+      # This will lead to O(N^2) performance in string_end_with_semicolon?, so we should use 32 bit encoding to make sure indexing stays O(1)
+      source = source.encode(Encoding::UTF_32LE) unless source.ascii_only?
+      return buf if string_end_with_semicolon?(source)
 
-        if !string_end_with_semicolon?(source)
-          buf << ";\n"
-        elsif source[source.size - 1].ord != 0x0A
-          buf << "\n"
-        end
+      # If the last character in the string was whitespace,
+      # such as a newline, then we want to put the semicolon
+      # before the whitespace. Otherwise append a semicolon.
+      if whitespace = WHITESPACE_ORDINALS[source[-1].ord]
+        buf[-1] = ";#{whitespace}"
+      else
+        buf << ";"
       end
 
       buf
     end
+
+    MODULE_INCLUDE_MUTEX = Mutex.new
+    private_constant :MODULE_INCLUDE_MUTEX
 
     # Internal: Inject into target module for the duration of the block.
     #
@@ -123,24 +127,29 @@ module Sprockets
     #
     # Returns result of block.
     def module_include(base, mod)
-      old_methods = {}
+      MODULE_INCLUDE_MUTEX.synchronize do
+        old_methods = {}
 
-      mod.instance_methods.each do |sym|
-        old_methods[sym] = base.instance_method(sym) if base.method_defined?(sym)
-      end
+        mod.instance_methods.each do |sym|
+          old_methods[sym] = base.instance_method(sym) if base.method_defined?(sym)
+        end
 
-      mod.instance_methods.each do |sym|
-        method = mod.instance_method(sym)
-        base.send(:define_method, sym, method)
-      end
+        mod.instance_methods.each do |sym|
+          method = mod.instance_method(sym)
+          if base.method_defined?(sym)
+            base.send(:alias_method, sym, sym)
+          end
+          base.send(:define_method, sym, method)
+        end
 
-      yield
-    ensure
-      mod.instance_methods.each do |sym|
-        base.send(:undef_method, sym) if base.method_defined?(sym)
-      end
-      old_methods.each do |sym, method|
-        base.send(:define_method, sym, method)
+        yield
+      ensure
+        mod.instance_methods.each do |sym|
+          base.send(:undef_method, sym) if base.method_defined?(sym)
+        end
+        old_methods.each do |sym, method|
+          base.send(:define_method, sym, method)
+        end
       end
     end
 

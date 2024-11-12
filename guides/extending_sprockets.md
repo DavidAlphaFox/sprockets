@@ -18,7 +18,6 @@ Sprockets can use custom processors, compressors, and directives. This document 
 - [Supporting All Versions of Sprockets in Processors](#supporting-all-versions-of-sprockets-in-processors)
   - [Registering All Versions of Sprockets in Processors](#registering-all-versions-of-sprockets-in-processors)
 
-
 ## Types of Extensions
 
 Sprockets supports a few different ways to extend functionality.
@@ -120,7 +119,7 @@ Your exporter gets initialized once for each asset to be exported by sprockets w
  - environment (Instance of Sprockets::Environment)
  - directory (Instance of String)
 
-A `setup` method is called right after the exporter is initalized. Your exporter is expected implement a `skip?` method. If this method returns true then sprockets will skip your exporter and move to the next one. An instance of `Sprockets::Logger` is passed into this method that can be used to indicate to the user what is happening. This method is called synchronously.
+A `setup` method is called right after the exporter is initialized. Your exporter is expected implement a `skip?` method. If this method returns true then sprockets will skip your exporter and move to the next one. An instance of `Sprockets::Logger` is passed into this method that can be used to indicate to the user what is happening. This method is called synchronously.
 
 The work of writing the new asset to disk is performed in the `call` method. This method is potentially called in a new thread and should not mutate any global state. A `write` method is provided that takes a `filename` to be written to (full path) and yields an IO object.
 
@@ -194,7 +193,7 @@ Example
 "gallery"
 ```
 
-- `:content_type` - [String] The coresponding mime content type of the asset.
+- `:content_type` - [String] The corresponding mime content type of the asset.
 
 Example:
 
@@ -293,20 +292,12 @@ Sprockets.register_preprocessor 'text/coffeescript', DirectiveProcessor.new(comm
 
 In Sprockets 4 file types are no longer "chainable" this means that if you wanted to use a `.coffee.erb` that it must be registered to sprockets explicitly. This is different from previous versions of sprockets where you would have to register only a `.erb` processor and then a `.coffee` processor and sprockets would chain them (first running erb then coffee).
 
-The reason for the change is to have more explicit behavior. It helps sprockets know to do the right thing, decreases magic, and increases speed. It also means that as a library maintainer you must tell sprockets all the extensions you want your project to work with. Going with the coffee script example. You would need to register a mime type
+The reason for the change is to have more explicit behavior. It helps sprockets know to do the right thing, decreases magic, and increases speed. It also means that as a library maintainer you must tell sprockets all the extensions you want your project to work with. Going with the coffee script example:
 
-<!---
-Right now sprockets uses an "internal interface" to register erb files. I'm not actually sure how to register support for an ERB file correctly without using that interface, need to do more research
-
+```ruby
+Sprockets.register_mime_type('text/coffeescript+ruby', extensions: ['.coffee.erb'])
+Sprockets.register_transformer('text/coffeescript+ruby', 'text/coffeescript', ::Sprockets::CoffeeScriptProcessor)
 ```
-env.register_mime_type 'text/coffeescript+ruby', extensions: ['.coffee.erb', '.js.coffee.erb']
-
-env.register_mime_type 'text/coffeescript', extensions: ['.coffee', '.js.coffee']
-env.register_transformer 'text/coffeescript', 'application/javascript', CoffeeScriptProcessor
-env.register_preprocessor 'text/coffeescript', DirectiveProcessor.new(comments: ["#", ["###", "###"]])
-```
-
--->
 
 ## Supporting All Versions of Sprockets in Processors
 
@@ -412,7 +403,7 @@ module MySprocketsExtension
 end
 ```
 
-If your application is making serious modifications to the source file (an example could be a coffee script file generating JS will be signifigantly different) then you'll want to calculate and return an appropriate `map` key in the `metadata` hash. See the "metadata" section for more info on doing this.
+If your application is making serious modifications to the source file (an example could be a coffee script file generating JS will be significantly different) then you'll want to calculate and return an appropriate `map` key in the `metadata` hash. See the "metadata" section for more info on doing this.
 
 Once you've written your processor to run on all 3 versions of Sprockets you will need to register it. This is covered next.
 
@@ -426,9 +417,7 @@ In Sprockets 2 and 3 the way you registered a processor was via `register_engine
 if env.respond_to?(:register_transformer)
   env.register_mime_type 'text/css', extensions: ['.css'], charset: :css
   env.register_preprocessor 'text/css', MySprocketsExtension
-end
-
-if env.respond_to?(:register_engine)
+elsif env.respond_to?(:register_engine)
   args = ['.css', MySprocketsExtension]
   args << { mime_type: 'text/css', silence_deprecation: true } if Sprockets::VERSION.start_with?("3")
   env.register_engine(*args)
@@ -443,7 +432,7 @@ To understand why this is all needed, we can break down the parts. First is how 
 env.register_engine '.css', MySprocketsExtension, mime_type: 'text/css', silence_deprecation: true
 ```
 
-The use of `register_engine` is deprecated in Sprockets 3 and you will get a deprecation warning about it's use. We can pass in `silence_deprecation: true` to let Sprockets know that the inteface is going away, only do this on code you know works with Sprockets 4.
+The use of `register_engine` is deprecated in Sprockets 3 and you will get a deprecation warning about it's use. We can pass in `silence_deprecation: true` to let Sprockets know that the interface is going away, only do this on code you know works with Sprockets 4.
 
 To get the `register_engine` code working with Sprockets 2 we have to do some version detection since Sprockets 2 will error if you try to pass a hash into it:
 

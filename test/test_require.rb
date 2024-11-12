@@ -1,13 +1,15 @@
 # frozen_string_literal: true
 require 'minitest/autorun'
 
-class TestRequire < MiniTest::Test
+class TestRequire < Minitest::Test
   parallelize_me!
 
   ROOT = File.expand_path("../..", __FILE__)
 
   Dir["#{ROOT}/lib/**/*.rb"].each do |fn|
-    next if File.basename(fn) == "version.rb"
+    basename = File.basename(fn)
+    next if basename == "version.rb"
+    next if RUBY_PLATFORM.include?('java') && ['zopfli.rb', 'jsminc.rb', 'sassc.rb'].include?(basename)
 
     define_method "test_require_individual_library_files: #{fn}" do
       system "ruby", "-I#{ROOT}/lib", fn

@@ -2,7 +2,7 @@
 require 'minitest/autorun'
 require 'sprockets/path_utils'
 
-class TestPathUtils < MiniTest::Test
+class TestPathUtils < Minitest::Test
   include Sprockets::PathUtils
 
   DOSISH = File::ALT_SEPARATOR != nil
@@ -31,6 +31,7 @@ class TestPathUtils < MiniTest::Test
       "context",
       "default",
       "directives",
+      "double",
       "encoding",
       "errors",
       "index-assets",
@@ -44,7 +45,7 @@ class TestPathUtils < MiniTest::Test
       "source-maps",
       "symlink"
     ], entries(File.expand_path("../fixtures", __FILE__))
-    
+
     [ ['a', 'b'], ['a', 'b', '.', '..'] ].each do |dir_contents|
       Dir.stub :entries, dir_contents do
         assert_equal ['a', 'b'], entries(Dir.tmpdir)
@@ -107,6 +108,8 @@ class TestPathUtils < MiniTest::Test
 
     subpath = File.expand_path("../fixtures/default/app/application.js", __FILE__)
     assert_equal "app/application.js", split_subpath(path, subpath)
+
+    assert_nil split_subpath(path, nil)
 
     subpath = File.expand_path("../fixtures/default", __FILE__)
     assert_equal "", split_subpath(path, subpath)

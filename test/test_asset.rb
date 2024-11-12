@@ -123,6 +123,50 @@ module FreshnessTests
       end
     end
   end
+
+  test "modify asset's dependency file in directory" do
+    main = fixture_path('asset/test-main.js.erb')
+    dep  = fixture_path('asset/data/foo.txt')
+    begin
+      ::FileUtils.mkdir File.dirname(dep)
+      sandbox main, dep do
+        write(main, "//= depend_on_directory ./data\n<%= File.read('#{dep}') %>")
+        write(dep, "a;")
+        asset      = asset('test-main.js')
+        old_digest = asset.hexdigest
+        old_uri    = asset.uri
+        assert_equal "a;\n", asset.to_s
+
+        write(dep, "b;")
+        asset = asset('test-main.js')
+        refute_equal old_digest, asset.hexdigest
+        refute_equal old_uri, asset.uri
+        assert_equal "b;\n", asset.to_s
+      end
+    ensure
+      ::FileUtils.rmtree File.dirname(dep)
+    end
+  end
+
+  test "asset's dependency on directory exists" do
+    main = fixture_path('asset/test-missing-directory.js.erb')
+    dep  = fixture_path('asset/data/foo.txt')
+
+    begin
+      sandbox main, dep do
+        ::FileUtils.rmtree File.dirname(dep)
+        write(main, "//= depend_on_directory ./data")
+        assert_raises(Sprockets::ArgumentError) do
+          asset('test-missing-directory.js')
+        end
+
+        ::FileUtils.mkdir File.dirname(dep)
+        assert asset('test-missing-directory.js')
+      end
+    ensure
+      ::FileUtils.rmtree File.dirname(dep)
+    end
+  end
 end
 
 class TextStaticAssetTest < Sprockets::TestCase
@@ -332,7 +376,7 @@ class SourceAssetTest < Sprockets::TestCase
   end
 
   def asset(logical_path, options = {})
-    @env.find_asset(logical_path, {pipeline: @pipeline}.merge(options))
+    @env.find_asset(logical_path, **{pipeline: @pipeline}.merge(options))
   end
 end
 
@@ -397,13 +441,13 @@ class ProcessedAssetTest < Sprockets::TestCase
   end
 
   test "each" do
-    body = String.new("")
+    body = +""
     @asset.each { |part| body << part }
     assert_equal "\n\n\ndocument.on('dom:loaded', function() {\n  $('search').focus();\n});\n", body
   end
 
   def asset(logical_path, options = {})
-    @env.find_asset(logical_path, {pipeline: @pipeline}.merge(options))
+    @env.find_asset(logical_path, **{pipeline: @pipeline}.merge(options))
   end
 end
 
@@ -433,6 +477,12 @@ class BundledAssetTest < Sprockets::TestCase
   test "digest path" do
     assert_equal "application-955b2dddd0d1449b1c617124b83b46300edadec06d561104f7f6165241b31a94.js",
       @asset.digest_path
+  end
+
+  test "environment version" do
+    @env.version = "v1"
+
+    assert_equal "v1", @env['application.js'].environment_version
   end
 
   test "content type" do
@@ -468,7 +518,7 @@ class BundledAssetTest < Sprockets::TestCase
   end
 
   test "each" do
-    body = String.new("")
+    body = +""
     @asset.each { |part| body << part }
     assert_equal "var Project = {\n  find: function(id) {\n  }\n};\nvar Users = {\n  find: function(id) {\n  }\n};\n\n\n\ndocument.on('dom:loaded', function() {\n  $('search').focus();\n});\n", body
   end
@@ -885,8 +935,7 @@ class BundledAssetTest < Sprockets::TestCase
 
 define("application.js", "application-955b2dddd0d1449b1c617124b83b46300edadec06d561104f7f6165241b31a94.js")
 define("application.css", "application-46d50149c56fc370805f53c29f79b89a52d4cc479eeebcdc8db84ab116d7ab1a.css")
-define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bdebd5800.png")
-;
+define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bdebd5800.png");
     EOS
     assert_equal [
       "file://#{fixture_path_for_uri("asset/POW.png")}?type=image/png&id=xxx",
@@ -904,8 +953,7 @@ define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bd
 
 define("application.js", "application-955b2dddd0d1449b1c617124b83b46300edadec06d561104f7f6165241b31a94.js")
 define("application.css", "application-46d50149c56fc370805f53c29f79b89a52d4cc479eeebcdc8db84ab116d7ab1a.css")
-define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bdebd5800.png")
-;
+define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bdebd5800.png");
     EOS
 
     assert_equal [
@@ -1080,13 +1128,22 @@ define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bd
   end
 
   test "appends missing semicolons" do
-    assert_equal "var Bar\n;\n\n(function() {\n  var Foo\n})\n;\n",
-      asset("semicolons.js").to_s
+expected = <<-EOS
+var Bar;
+
+(function() {
+  var Foo
+});
+EOS
+    assert_equal expected, asset("semicolons.js").to_s
   end
 
   test 'keeps code in same line after multi-line comments' do
-    assert_equal "/******/ function foo() {\n}\n;\n",
-      asset('multi_line_comment.js').to_s
+expected = <<-EOS
+/******/ function foo() {
+};
+EOS
+    assert_equal expected, asset('multi_line_comment.js').to_s
   end
 
   test "should not fail if home is not set in environment" do
@@ -1103,11 +1160,49 @@ define("POW.png", "POW-1da2e59df75d33d8b74c3d71feede698f203f136512cbaab20c68a5bd
   end
 
   def asset(logical_path, options = {})
-    @env.find_asset(logical_path, {pipeline: @pipeline}.merge(options))
+    @env.find_asset(logical_path, **{pipeline: @pipeline}.merge(options))
   end
 
   def read(logical_path)
     File.read(fixture_path(logical_path))
+  end
+end
+
+class PreDigestedAssetTest < Sprockets::TestCase
+  def setup
+    @env = Sprockets::Environment.new
+    @env.append_path(fixture_path('asset'))
+    @env.cache = {}
+
+    @pipeline = nil
+  end
+
+  test "digest path" do
+    path     = File.expand_path("test/fixtures/asset/application")
+    original = "#{path}.js"
+    digested = "#{path}-d41d8cd98f00b204e9800998ecf8427e.digested.js"
+    FileUtils.cp(original, digested)
+
+    assert_equal "application-d41d8cd98f00b204e9800998ecf8427e.digested.js",
+      asset("application-d41d8cd98f00b204e9800998ecf8427e.digested.js").digest_path
+  ensure
+    FileUtils.rm(digested) if File.exist?(digested)
+  end
+
+  test "digest base32 path" do
+    path     = File.expand_path("test/fixtures/asset/application")
+    original = "#{path}.js"
+    digested = "#{path}-TQDC3LZV.digested.js"
+    FileUtils.cp(original, digested)
+
+    assert_equal "application-TQDC3LZV.digested.js",
+      asset("application-TQDC3LZV.digested.js").digest_path
+  ensure
+    FileUtils.rm(digested) if File.exist?(digested)
+  end
+
+  def asset(logical_path, options = {})
+    @env.find_asset(logical_path, **{pipeline: @pipeline}.merge(options))
   end
 end
 
@@ -1134,7 +1229,7 @@ class DebugAssetTest < Sprockets::TestCase
   end
 
   test "digest path" do
-    assert_equal "application.debug-60cfa762e3139c2580dbfbefd46a5359803225363eaef31efb725e6731ab6849.js",
+    assert_equal "application.debug-dee339ce0ee2dc7cdfa0d36dff3ef946cebe1bd3e414515d40c3cafc49c0a51a.js",
       @asset.digest_path
   end
 
@@ -1143,7 +1238,7 @@ class DebugAssetTest < Sprockets::TestCase
   end
 
   test "length" do
-    assert_equal 264, @asset.length
+    assert_equal 265, @asset.length
   end
 
   test "charset is UTF-8" do
@@ -1151,7 +1246,26 @@ class DebugAssetTest < Sprockets::TestCase
   end
 
   test "to_s" do
-    assert_equal "var Project = {\n  find: function(id) {\n  }\n};\nvar Users = {\n  find: function(id) {\n  }\n};\n\n\n\ndocument.on('dom:loaded', function() {\n  $('search').focus();\n});\n\n//# sourceMappingURL=application.js-161f7edec524c6e94ab3b89924c4fb96d4552bb83b32d975c074b7fb9a84c454.map", @asset.to_s
+expected = <<-EOS
+var Project = {
+  find: function(id) {
+  }
+};
+var Users = {
+  find: function(id) {
+  }
+};
+
+
+
+document.on('dom:loaded', function() {
+  $('search').focus();
+});
+
+//# sourceMappingURL=application.js-95e519d4e0f0a5c4c7d24787ded990b0d027f7ad30b39f402c4c5e3196a41e8b.map
+EOS
+
+    assert_equal expected, @asset.to_s
   end
 
   def asset(logical_path, options = {})
@@ -1219,7 +1333,7 @@ class AssetLogicalPathTest < Sprockets::TestCase
     filename = fixture_path("paths/#{path}")
     assert File.exist?(filename), "#{filename} does not exist"
     silence_warnings do
-      assert asset = @env.find_asset(filename, options), "couldn't find asset: #{filename}"
+      assert asset = @env.find_asset(filename, **options), "couldn't find asset: #{filename}"
       asset.logical_path
     end
   end
@@ -1282,7 +1396,7 @@ class AssetContentTypeTest < Sprockets::TestCase
     filename = fixture_path("paths/#{path}")
     assert File.exist?(filename), "#{filename} does not exist"
     silence_warnings do
-      assert asset = @env.find_asset(filename, options), "couldn't find asset: #{filename}"
+      assert asset = @env.find_asset(filename, **options), "couldn't find asset: #{filename}"
       asset.content_type
     end
   end

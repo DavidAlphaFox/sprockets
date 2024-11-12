@@ -122,7 +122,7 @@ module Sprockets
         ## use regext to extract directives
         header, directives = extract_directives(header)
 
-        data = String.new("")
+        data = +""
         data.force_encoding(body.encoding)
         data << header unless header.empty?
         data << body
@@ -140,7 +140,7 @@ module Sprockets
       #     [[1, "require", "foo"], [2, "require", "bar"]]
       #
       def extract_directives(header)
-        processed_header = String.new("")
+        processed_header = +""
         directives = []
 
         header.lines.each_with_index do |line, index|
@@ -289,6 +289,24 @@ module Sprockets
         to_load(resolve(path))
       end
 
+      # Allows you to state a dependency on a relative directory
+      # without including it.
+      #
+      # This is used for caching purposes. Any changes made to
+      # the dependency directory will invalidate the cache of the
+      # source file.
+      #
+      # This is useful if you are using ERB and File.read to pull
+      # in contents from multiple files in a directory.
+      #
+      #     //= depend_on_directory ./data
+      #
+      def process_depend_on_directory_directive(path = ".", accept = nil)
+        path = expand_relative_dirname(:depend_on_directory, path)
+        accept = expand_accept_shorthand(accept)
+        resolve_paths(*@environment.stat_directory_with_dependencies(path), accept: accept)
+      end
+
       # Allows dependency to be excluded from the asset bundle.
       #
       # The `path` must be a valid asset and may or may not already
@@ -378,7 +396,7 @@ module Sprockets
           next if subpath == @filename || stat.directory?
           uri, deps = @environment.resolve(subpath, **kargs)
           @dependencies.merge(deps)
-          yield uri if uri
+          yield uri if uri && block_given?
         end
       end
 

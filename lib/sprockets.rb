@@ -51,6 +51,7 @@ module Sprockets
   register_mime_type 'application/json', extensions: ['.json'], charset: :unicode
   register_mime_type 'application/ruby', extensions: ['.rb']
   register_mime_type 'application/xml', extensions: ['.xml']
+  register_mime_type 'application/manifest+json', extensions: ['.webmanifest']
   register_mime_type 'text/css', extensions: ['.css'], charset: :css
   register_mime_type 'text/html', extensions: ['.html', '.htm'], charset: :html
   register_mime_type 'text/plain', extensions: ['.txt', '.text']
@@ -72,10 +73,14 @@ module Sprockets
   register_mime_type 'audio/aiff', extensions: ['.aiff']
   register_mime_type 'audio/mpeg', extensions: ['.mp3', '.mp2', '.m2a', '.m3a']
   register_mime_type 'application/ogg', extensions: ['.ogx']
+  register_mime_type 'audio/ogg', extensions: ['.ogg', '.oga']
   register_mime_type 'audio/midi', extensions: ['.midi', '.mid']
   register_mime_type 'video/avi', extensions: ['.avi']
   register_mime_type 'audio/wave', extensions: ['.wav', '.wave']
   register_mime_type 'video/mp4', extensions: ['.mp4', '.m4v']
+  register_mime_type 'audio/aac', extensions: ['.aac']
+  register_mime_type 'audio/mp4', extensions: ['.m4a']
+  register_mime_type 'audio/flac', extensions: ['.flac']
 
   # Common font types
   register_mime_type 'application/vnd.ms-fontobject', extensions: ['.eot']
@@ -85,8 +90,8 @@ module Sprockets
   register_mime_type 'application/font-woff2', extensions: ['.woff2']
 
   require 'sprockets/source_map_processor'
-  register_mime_type 'application/js-sourcemap+json', extensions: ['.js.map']
-  register_mime_type 'application/css-sourcemap+json', extensions: ['.css.map']
+  register_mime_type 'application/js-sourcemap+json', extensions: ['.js.map'], charset: :unicode
+  register_mime_type 'application/css-sourcemap+json', extensions: ['.css.map'], charset: :unicode
   register_transformer 'application/javascript', 'application/js-sourcemap+json', SourceMapProcessor
   register_transformer 'text/css', 'application/css-sourcemap+json', SourceMapProcessor
 
@@ -102,14 +107,10 @@ module Sprockets
     env.default_processors_for(type, file_type)
   end
 
-  require 'sprockets/source_map_comment_processor'
+  require 'sprockets/add_source_map_comment_to_asset_processor'
   register_pipeline :debug do
-    [SourceMapCommentProcessor]
+    [AddSourceMapCommentToAssetProcessor]
   end
-
-  require 'sprockets/preprocessors/default_source_map'
-  register_preprocessor 'text/css', Preprocessors::DefaultSourceMap.new
-  register_preprocessor 'application/javascript', Preprocessors::DefaultSourceMap.new
 
   require 'sprockets/directive_processor'
   register_preprocessor 'text/css', DirectiveProcessor.new(comments: ["//", ["/*", "*/"]])
@@ -119,11 +120,10 @@ module Sprockets
   register_bundle_processor 'application/javascript', Bundle
   register_bundle_processor 'text/css', Bundle
 
-  register_bundle_metadata_reducer '*/*', :data, proc { String.new("") }, :concat
-  register_bundle_metadata_reducer 'application/javascript', :data, proc { String.new("") }, Utils.method(:concat_javascript_sources)
+  register_bundle_metadata_reducer '*/*', :data, proc { +"" }, :concat
+  register_bundle_metadata_reducer 'application/javascript', :data, proc { +"" }, Utils.method(:concat_javascript_sources)
   register_bundle_metadata_reducer '*/*', :links, :+
   register_bundle_metadata_reducer '*/*', :sources, proc { [] }, :+
-  register_bundle_metadata_reducer '*/*', :map, proc { |input| { "version" => 3, "file" => PathUtils.split_subpath(input[:load_path], input[:filename]), "sections" => [] } }, SourceMapUtils.method(:concat_source_maps)
 
   require 'sprockets/closure_compressor'
   require 'sprockets/sass_compressor'
@@ -166,11 +166,11 @@ module Sprockets
   register_transformer 'application/javascript+function', 'application/javascript', JstProcessor
 
   # CSS processors
-  require 'sprockets/sass_processor'
+  require 'sprockets/sassc_processor'
   register_mime_type 'text/sass', extensions: ['.sass', '.css.sass']
   register_mime_type 'text/scss', extensions: ['.scss', '.css.scss']
-  register_transformer 'text/sass', 'text/css', SassProcessor
-  register_transformer 'text/scss', 'text/css', ScssProcessor
+  register_transformer 'text/sass', 'text/css', SasscProcessor
+  register_transformer 'text/scss', 'text/css', ScsscProcessor
   register_preprocessor 'text/sass', DirectiveProcessor.new(comments: ["//", ["/*", "*/"]])
   register_preprocessor 'text/scss', DirectiveProcessor.new(comments: ["//", ["/*", "*/"]])
   register_bundle_metadata_reducer 'text/css', :sass_dependencies, Set.new, :+
@@ -181,6 +181,7 @@ module Sprockets
     application/ecmascript-6
     application/javascript
     application/json
+    application/manifest+json
     application/xml
     text/coffeescript
     text/css
@@ -189,6 +190,8 @@ module Sprockets
     text/sass
     text/scss
     text/yaml
+    text/eco
+    text/ejs
   ), 'application/\2+ruby', '.erb', ERBProcessor)
 
   register_mime_type 'application/html+ruby', extensions: ['.html.erb', '.erb', '.rhtml'], charset: :html
@@ -219,4 +222,11 @@ module Sprockets
 
   depend_on 'environment-version'
   depend_on 'environment-paths'
+
+  require 'sprockets/preprocessors/default_source_map'
+  register_preprocessor 'text/css',               Preprocessors::DefaultSourceMap.new
+  register_preprocessor 'application/javascript', Preprocessors::DefaultSourceMap.new
+
+  register_bundle_metadata_reducer 'text/css',               :map, proc { |input| { "version" => 3, "file" => PathUtils.split_subpath(input[:load_path], input[:filename]), "sections" => [] } }, SourceMapUtils.method(:concat_source_maps)
+  register_bundle_metadata_reducer 'application/javascript', :map, proc { |input| { "version" => 3, "file" => PathUtils.split_subpath(input[:load_path], input[:filename]), "sections" => [] } }, SourceMapUtils.method(:concat_source_maps)
 end

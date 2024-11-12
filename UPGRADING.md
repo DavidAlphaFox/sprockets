@@ -4,16 +4,34 @@ Make sure that you're running the latest Sprockets 3 release. This document is a
 
 This upgrading guide touches on:
 
+- Upgrading as a Rails dependency
 - Source Maps
 - Manifest.js
+  - In a Rails app, possible backwards incompatible changes in how top-level targets are determined.
 - ES6 support
 - Deprecated processor interface in 3.x is removed in 4.x
 
+## Upgrading as a Rails Dependency
+
+Your Rails app Gemfile may have a line requiring sass-rails 5.0:
+
+    gem 'sass-rails', '~> 5.0'
+    # or
+    gem 'sass-rails', '~> 5'
+
+These will prevent upgrade to sprockets 4, if you'd like to upgrade to sprockets 4 change to:
+
+    gem 'sass-rails', '>= 5'
+
+And then run `bundle update sass-rails sprockets` to get sass-rails 6.x and sprockets 4.x.
+
 ## Source Maps
+
+Read more about [What is a source map](https://schneems.com/2017/11/14/wtf-is-a-source-map/).
 
 Source maps are a major new feature. As a word of warning, source maps were half finished when this project was transitioned between maintainers. Please try things and if they don't work correctly open an issue with what you expected to happen, what happened and a small sample app showing the problem.
 
-First, what is a source map? Source maps are a standard way to make debugging concatenated or compiled assets easier. When using Rails and Sprockets in development mode, no assets are concatenated. If your app used 10 JS files, all of them would be served independently. This helped with debugging: you got helpful errors like `Error in file <file.js> on line <number>` that pointed at the problem instead of at an unrelated, minified JS file. 
+First, what is a source map? Source maps are a standard way to make debugging concatenated or compiled assets easier. When using Rails and Sprockets in development mode, no assets are concatenated. If your app used 10 JS files, all of them would be served independently. This helped with debugging: you got helpful errors like `Error in file <file.js> on line <number>` that pointed at the problem instead of at an unrelated, minified JS file.
 
 Source maps eliminate the need to serve these separate files. Instead, a special source map file can be read by the browser to help it understand how to unpack your assets. It "maps" the current, modified asset to its "source" so you can view the source when debugging. This way you can serve assets in development in the exact same way as in production. Fewer surprises is always better.
 
@@ -23,36 +41,68 @@ How do you know if source maps are working correctly? Try adding a syntax error 
 
 ## Manifest.js
 
-Previously, if you wanted Rails to serve a non-standard named asset (any CSS not called `application.css` or JS not called `application.js`) you would have to add those files to a precompile list. For example, if you needed a marketing page with its own CSS you might add something like this:
+When compiling assets with Sprockets, Sprockets needs to decide which top-level targets to compile, usually `application.css`, `application.js`, and images.
+
+If you are using sprockets prior to 4.0, Rails will compile `application.css`, `application.js`; and *any* files found in your assets directory(ies) that are _not_ recognized as JS or CSS, but do have a filename extension. That latter was meant to apply to all your images usually in `./app/assets/images/`, but could have targeted other files as well.
+
+If you wanted to specify additional assets to deliver that were not included by this logic, for instance for a marketing page with its own CSS, you might add something like this:
 
 
 ```ruby
-# In your Rails configuration
+# In your Rails configuration, prior to Sprockets 4
 config.assets.precompile += ["marketing.css"]
 ```
 
-Sprockets 3 introduced the concept of a "manifest" file that could list all assets you want to make available using the `link` directive. In this case, to compile the `marketing.css` you would set precompile to:
+If you are using Sprockets 4, Rails changes its default logic for determining top-level targets.  It will now use _only_ a file at `./app/assets/config/manifest.js` for specifying top-level targets; this file may already exist in your Rails app (although Rails only starts automatically using it once you are using sprockets 4), if not you should create it.
 
-```ruby
-config.assets.precompile = ["manifest.js"]
+The `manifest.js` file is meant to specify which files to use as a top-level target using sprockets methods `link`, `link_directory`, and `link_tree`.
+
+The default `manifest.js` created by `rails new` for the past few Rails versions looks like:
+
+```js
+//= link_tree ../images
+//= link_directory ../javascripts .js
+//= link_directory ../stylesheets .css
 ```
 
-Then you will `link` to that css file in your `manifest.js` file. In Sprockets the `link` directive declares that your file has a dependency on the thing you are linking, so it guarantees it will be compiled. Here's our example manifest file:
+This is meant to include the contents of all files found in the `./app/assets/images` directory or any subdirectories as well as any file recognized as JS directly at `./app/assets/javascripts` or as CSS directly at `./app/assets/stylesheets` (both not including subdirectories). (The JS line is not generated in Rails 6.0 apps, since Rails 6.0 apps do not manage JS with sprockets).
+
+Since the default logic for determining top-level targets changed, you might find some files that were currently compiled by sprockets for delivery to browser no longer are. You will have to edit the `manifest.js` to specify those files.
+
+You may also find that some files that were *not* previously compiled as top-level targets are now. For instance, if your existing app has any js files directly at `./app/assets/javascripts` or css/scss files `./app/assets/stylesheets`, Rails with Sprockets 4 will now compile them as top-level targets. Since they were not previously treated as such, you probably don't mean them to be; if they are .scss partials referencing variables meant to be defined in other files, it may even result in an error message that looks like `Undefined variable: $some_variable`.
+
+To correct this, you can move these files to some _subdirectory_ of `./app/assets/stylesheets` or `javascripts`; or you can change the `manifest.js` to be more like how Rails with Sprockets 3 works, linking only the specific `application` files as top-level targets:
+
+```js
+//= link_tree ../images
+//= link application.css
+//= link application.js
+//
+// maybe another non-standard file?
+//= link marketing.css
+```
+
+**Caution**: the "link" directive should always have an explicit content type or file extension.
+
+Now you'll be able to use a `<%= stylesheet_link_tag "application" %>` or `<%= stylesheet_link_tag "marketing" %>` in your code.
+
+If you have additional non-standard files you need to be top-level targets, instead of using `config.assets.precompile`, you can use `link`, `link_directory`, and `link_tree` directives in the `manifest.js`.
+
+If you are mounting Rails engines which provide their own assets, check to see if they define their own `manifest.js` file. That file can also be linked using the `link` directive:
 
 ```js
 // app/assets/config/manifest.js
-//
-//= link application.css
-//= link marketing.css
-//
-//= link application.js
+//= link my_engine
+
+// my_engine/app/assets/config/my_engine.js
+//= link_directory ../stylesheets/my_engine .css
 ```
 
-**Caution**: the "link" directive should have an explicit content type or file extension.
+This example will direct Sprockets to include the manifest file for the engine `my_engine`; since that manifest uses `link_directory`, the CSS file at `my_engine/app/assets/stylesheets/my_engine/overrides.css` will be made available to Rails (most importantly, to the engine's templates) at `my_engine/overrides`.
 
-Now you'll be able to use a `<%= stylesheet_link_tag "marketing" %>` in your code. This is a standard way to let Sprockets know what files need to be compiled.
+Existing `config.assets.precompile` settings will still work for string values (although it is discouraged), but if you were previously using regexp or proc values, they won't work at all with Sprockets 4, and if you try you'll get an exception raised that looks like `NoMethodError: undefined method 'start_with?'`
 
-Some assets will be compiled when they are referenced from inside of another asset. For example, the `asset_url` erb helper will automatically link assets:
+Some assets will be compiled as top-level assets when they are referenced from inside of another asset. For example, the `asset_url` erb helper will automatically link assets:
 
 ``` css
 .logo {
@@ -63,6 +113,8 @@ Some assets will be compiled when they are referenced from inside of another ass
 When you do this Sprockets will "link" `logo.png` behind the scenes. This lets Sprockets know that this file needs to be compiled and made publicly available. If that logo file changes, Sprockets will automatically see that change and re-compile the CSS file.
 
 One benefit of using a `manifest.js` file for this type of configuration is that now Sprockets is using Sprockets to understand what files need to be generated instead of a non-portable framework-specific interface.
+
+For more information on `link`, `link_tree`, and `link_directory` see the [README](./README.md).
 
 ## ES6 Support
 

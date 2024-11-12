@@ -3,7 +3,7 @@
 require 'minitest/autorun'
 require 'sprockets/encoding_utils'
 
-class TestDigestUtils < MiniTest::Test
+class TestDigestUtils < Minitest::Test
   include Sprockets::EncodingUtils
 
   def test_deflate
@@ -52,6 +52,10 @@ class TestDigestUtils < MiniTest::Test
   end
 
   def test_fail_to_unmarshal_not_enough_data
+    if RUBY_ENGINE == 'truffleruby' and Gem::Version.new(RUBY_ENGINE_VERSION) < Gem::Version.new('23.0.0.a')
+      skip "TypeError on TruffleRuby < 23.0"
+    end
+
     assert_raises ArgumentError do
       Marshal.load("")
     end

@@ -48,17 +48,19 @@ module Sprockets
       path = URI::Generic::DEFAULT_PARSER.unescape(path)
       path.force_encoding(Encoding::UTF_8)
 
-      # Hack for parsing Windows "file:///C:/Users/IEUser" paths
-      path.gsub!(/^\/([a-zA-Z]:)/, '\1'.freeze)
+      # Hack for parsing Windows "/C:/Users/IEUser" paths
+      if File::ALT_SEPARATOR && path[2] == ':'
+        path = path[1..-1]
+      end
 
-      [scheme, host, path, query]
+      [scheme, host || '', path, query]
     end
 
     # Internal: Join file: URI component parts into String.
     #
     # Returns String.
     def join_file_uri(scheme, host, path, query)
-      str = String.new("#{scheme}://")
+      str = +"#{scheme}://"
       str << host if host
       path = "/#{path}" unless path.start_with?("/".freeze)
       str << URI::Generic::DEFAULT_PARSER.escape(path)

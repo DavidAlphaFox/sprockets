@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require 'set'
 require 'time'
-require 'rack/utils'
+require 'rack'
 
 module Sprockets
   # `Server` is a concern mixed into `Environment` and
@@ -10,6 +10,16 @@ module Sprockets
   module Server
     # Supported HTTP request methods.
     ALLOWED_REQUEST_METHODS = ['GET', 'HEAD'].to_set.freeze
+
+    # :stopdoc:
+    if Gem::Version.new(Rack::RELEASE) < Gem::Version.new("3")
+      X_CASCADE = "X-Cascade"
+      VARY = "Vary"
+    else
+      X_CASCADE = "x-cascade"
+      VARY = "vary"
+    end
+    # :startdoc:
 
     # `call` implements the Rack 1.x specification which accepts an
     # `env` Hash and returns a three item tuple with the status code,
@@ -35,7 +45,12 @@ module Sprockets
       msg = "Served asset #{env['PATH_INFO']} -"
 
       # Extract the path from everything after the leading slash
-      path = Rack::Utils.unescape(env['PATH_INFO'].to_s.sub(/^\//, ''))
+      full_path = Rack::Utils.unescape(env['PATH_INFO'].to_s.sub(/^\//, ''))
+      path = full_path
+
+      unless path.valid_encoding?
+        return bad_request_response(env)
+      end
 
       # Strip fingerprint
       if fingerprint = path_fingerprint(path)
@@ -50,15 +65,24 @@ module Sprockets
       if fingerprint
         if_match = fingerprint
       elsif env['HTTP_IF_MATCH']
-        if_match = env['HTTP_IF_MATCH'][/^"(\w+)"$/, 1]
+        if_match = env['HTTP_IF_MATCH'][/"(\w+)"$/, 1]
       end
 
       if env['HTTP_IF_NONE_MATCH']
-        if_none_match = env['HTTP_IF_NONE_MATCH'][/^"(\w+)"$/, 1]
+        if_none_match = env['HTTP_IF_NONE_MATCH'][/"(\w+)"$/, 1]
       end
 
       # Look up the asset.
       asset = find_asset(path)
+
+      # Fallback to looking up the asset with the full path.
+      # This will make assets that are hashed with webpack or
+      # other js bundlers work consistently between production
+      # and development pipelines.
+      if asset.nil? && (asset = find_asset(full_path))
+        if_match = asset.etag if fingerprint
+        fingerprint = asset.etag
+      end
 
       if asset.nil?
         status = :not_found
@@ -110,7 +134,7 @@ module Sprockets
         #
         #     http://example.org/assets/../../../etc/passwd
         #
-        path.include?("..") || absolute_path?(path)
+        path.include?("..") || absolute_path?(path) || path.include?("://")
       end
 
       def head_request?(env)
@@ -131,33 +155,42 @@ module Sprockets
         [ 304, cache_headers(env, etag), [] ]
       end
 
+      # Returns a 400 Forbidden response tuple
+      def bad_request_response(env)
+        if head_request?(env)
+          [ 400, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "0" }, [] ]
+        else
+          [ 400, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "11" }, [ "Bad Request" ] ]
+        end
+      end
+
       # Returns a 403 Forbidden response tuple
       def forbidden_response(env)
         if head_request?(env)
-          [ 403, { "Content-Type" => "text/plain", "Content-Length" => "0" }, [] ]
+          [ 403, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "0" }, [] ]
         else
-          [ 403, { "Content-Type" => "text/plain", "Content-Length" => "9" }, [ "Forbidden" ] ]
+          [ 403, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "9" }, [ "Forbidden" ] ]
         end
       end
 
       # Returns a 404 Not Found response tuple
       def not_found_response(env)
         if head_request?(env)
-          [ 404, { "Content-Type" => "text/plain", "Content-Length" => "0", "X-Cascade" => "pass" }, [] ]
+          [ 404, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "0", X_CASCADE => "pass" }, [] ]
         else
-          [ 404, { "Content-Type" => "text/plain", "Content-Length" => "9", "X-Cascade" => "pass" }, [ "Not found" ] ]
+          [ 404, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "9", X_CASCADE => "pass" }, [ "Not found" ] ]
         end
       end
 
       def method_not_allowed_response
-        [ 405, { "Content-Type" => "text/plain", "Content-Length" => "18" }, [ "Method Not Allowed" ] ]
+        [ 405, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "18" }, [ "Method Not Allowed" ] ]
       end
 
       def precondition_failed_response(env)
         if head_request?(env)
-          [ 412, { "Content-Type" => "text/plain", "Content-Length" => "0", "X-Cascade" => "pass" }, [] ]
+          [ 412, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "0", X_CASCADE => "pass" }, [] ]
         else
-          [ 412, { "Content-Type" => "text/plain", "Content-Length" => "19", "X-Cascade" => "pass" }, [ "Precondition Failed" ] ]
+          [ 412, { Rack::CONTENT_TYPE => "text/plain", Rack::CONTENT_LENGTH => "19", X_CASCADE => "pass" }, [ "Precondition Failed" ] ]
         end
       end
 
@@ -166,7 +199,7 @@ module Sprockets
       def javascript_exception_response(exception)
         err  = "#{exception.class.name}: #{exception.message}\n  (in #{exception.backtrace[0]})"
         body = "throw Error(#{err.inspect})"
-        [ 200, { "Content-Type" => "application/javascript", "Content-Length" => body.bytesize.to_s }, [ body ] ]
+        [ 200, { Rack::CONTENT_TYPE => "application/javascript", Rack::CONTENT_LENGTH => body.bytesize.to_s }, [ body ] ]
       end
 
       # Returns a CSS response that hides all elements on the page and
@@ -219,7 +252,7 @@ module Sprockets
           }
         CSS
 
-        [ 200, { "Content-Type" => "text/css; charset=utf-8", "Content-Length" => body.bytesize.to_s }, [ body ] ]
+        [ 200, { Rack::CONTENT_TYPE => "text/css; charset=utf-8", Rack::CONTENT_LENGTH => body.bytesize.to_s }, [ body ] ]
       end
 
       # Escape special characters for use inside a CSS content("...") string
@@ -235,18 +268,18 @@ module Sprockets
         headers = {}
 
         # Set caching headers
-        headers["Cache-Control"] = String.new("public")
-        headers["ETag"]          = %("#{etag}")
+        headers[Rack::CACHE_CONTROL] = +"public"
+        headers[Rack::ETAG]          = %("#{etag}")
 
         # If the request url contains a fingerprint, set a long
         # expires on the response
         if path_fingerprint(env["PATH_INFO"])
-          headers["Cache-Control"] << ", max-age=31536000, immutable"
+          headers[Rack::CACHE_CONTROL] << ", max-age=31536000, immutable"
 
         # Otherwise set `must-revalidate` since the asset could be modified.
         else
-          headers["Cache-Control"] << ", must-revalidate"
-          headers["Vary"] = "Accept-Encoding"
+          headers[Rack::CACHE_CONTROL] << ", must-revalidate"
+          headers[VARY] = "Accept-Encoding"
         end
 
         headers
@@ -256,7 +289,7 @@ module Sprockets
         headers = {}
 
         # Set content length header
-        headers["Content-Length"] = length.to_s
+        headers[Rack::CONTENT_LENGTH] = length.to_s
 
         # Set content type header
         if type = asset.content_type
@@ -264,7 +297,7 @@ module Sprockets
           if type.start_with?("text/") && asset.charset
             type += "; charset=#{asset.charset}"
           end
-          headers["Content-Type"] = type
+          headers[Rack::CONTENT_TYPE] = type
         end
 
         headers.merge(cache_headers(env, asset.etag))
@@ -276,7 +309,7 @@ module Sprockets
       #     # => "0aa2105d29558f3eb790d411d7d8fb66"
       #
       def path_fingerprint(path)
-        path[/-([0-9a-f]{7,128})\.[^.]+\z/, 1]
+        path[/-([0-9a-zA-Z]{7,128})\.[^.]+\z/, 1]
       end
   end
 end

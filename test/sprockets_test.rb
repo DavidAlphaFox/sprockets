@@ -3,6 +3,8 @@ require "minitest/autorun"
 require "sprockets"
 require "sprockets/environment"
 require "fileutils"
+require "timecop"
+require "rack/lint"
 
 old_verbose, $VERBOSE = $VERBOSE, false
 Encoding.default_external = 'UTF-8'
@@ -91,7 +93,7 @@ module Sprockets::TestDefinition
   end
 end
 
-class Sprockets::TestCase < MiniTest::Test
+class Sprockets::TestCase < Minitest::Test
   extend Sprockets::TestDefinition
 
   FIXTURE_ROOT = File.join(__dir__, "fixtures")

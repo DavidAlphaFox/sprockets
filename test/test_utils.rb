@@ -2,7 +2,7 @@
 require 'minitest/autorun'
 require 'sprockets/utils'
 
-class TestUtils < MiniTest::Test
+class TestUtils < Minitest::Test
   include Sprockets::Utils
 
   def test_duplicable
@@ -93,16 +93,17 @@ class TestUtils < MiniTest::Test
   def test_concat_javascript_sources
     assert_equal "var foo;\n", apply_concat_javascript_sources("".freeze, "var foo;\n".freeze)
     assert_equal "\nvar foo;\n", apply_concat_javascript_sources("\n".freeze, "var foo;\n".freeze)
-    assert_equal " \nvar foo;\n", apply_concat_javascript_sources(" ".freeze, "var foo;\n".freeze)
-
     assert_equal "var foo;\nvar bar;\n", apply_concat_javascript_sources("var foo;\n".freeze, "var bar;\n".freeze)
-    assert_equal "var foo;\nvar bar;\n", apply_concat_javascript_sources("var foo".freeze, "var bar".freeze)
-    assert_equal "var foo;\nvar bar;\n", apply_concat_javascript_sources("var foo;".freeze, "var bar;".freeze)
-    assert_equal "var foo;\nvar bar;\n", apply_concat_javascript_sources("var foo".freeze, "var bar;".freeze)
+
+    assert_equal " var foo;\n", apply_concat_javascript_sources(" ".freeze, "var foo;\n".freeze)
+    assert_equal "var foo;var bar;", apply_concat_javascript_sources("var foo".freeze, "var bar".freeze)
+    assert_equal "var foo;var bar;", apply_concat_javascript_sources("var foo;".freeze, "var bar;".freeze)
+    assert_equal "var foo;var bar;", apply_concat_javascript_sources("var foo".freeze, "var bar;".freeze)
+    assert_equal "var foo;\nvar bar;", apply_concat_javascript_sources("var foo\n".freeze, "var bar;".freeze)
   end
 
   def apply_concat_javascript_sources(*args)
-    args.reduce(String.new(""), &method(:concat_javascript_sources))
+    args.reduce(+"", &method(:concat_javascript_sources))
   end
 
 

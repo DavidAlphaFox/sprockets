@@ -51,7 +51,7 @@ module Sprockets
     # Internal: Cache key version for this class. Rarely should have to change
     # unless the cache format radically changes. Will be bump on major version
     # releases though.
-    VERSION = '4.0'
+    VERSION = '4.0.0'
 
     def self.default_logger
       logger = Logger.new($stderr)
@@ -62,7 +62,7 @@ module Sprockets
     # Internal: Wrap a backend cache store.
     #
     # Always assign a backend cache store instance to Environment#cache= and
-    # use Environment#cache to retreive a wrapped interface.
+    # use Environment#cache to retrieve a wrapped interface.
     #
     # cache - A compatible backend cache store instance.
     def initialize(cache = nil, logger = self.class.default_logger)

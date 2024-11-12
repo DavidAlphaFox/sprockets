@@ -16,6 +16,18 @@ require 'sprockets/source_map_utils'
 require 'sprockets/uri_tar'
 
 module Sprockets
+
+  class DoubleLinkError < Sprockets::Error
+    def initialize(parent_filename:, logical_path:, last_filename:, filename:)
+      super <<~MSG
+        Multiple files with the same output path cannot be linked (#{logical_path.inspect})
+        In #{parent_filename.inspect} these files were linked:
+          - #{last_filename}
+          - #{filename}
+      MSG
+    end
+  end
+
   # `Base` class for `Environment` and `CachedEnvironment`.
   class Base
     include PathUtils, PathDependencyUtils, PathDigestUtils, DigestUtils, SourceMapUtils
@@ -63,8 +75,8 @@ module Sprockets
     end
 
     # Find asset by logical path or expanded path.
-    def find_asset(*args)
-      uri, _ = resolve(*args)
+    def find_asset(*args, **options)
+      uri, _ = resolve(*args, **options)
       if uri
         load(uri)
       end
@@ -73,14 +85,26 @@ module Sprockets
     def find_all_linked_assets(*args)
       return to_enum(__method__, *args) unless block_given?
 
-      asset = find_asset(*args)
+      parent_asset = asset = find_asset(*args)
       return unless asset
 
       yield asset
       stack = asset.links.to_a
+      linked_paths = {}
 
       while uri = stack.shift
         yield asset = load(uri)
+
+        last_filename = linked_paths[asset.logical_path]
+        if last_filename && last_filename != asset.filename
+          raise DoubleLinkError.new(
+            parent_filename: parent_asset.filename,
+            last_filename:   last_filename,
+            logical_path:    asset.logical_path,
+            filename:        asset.filename
+          )
+        end
+        linked_paths[asset.logical_path] = asset.filename
         stack = asset.links.to_a + stack
       end
 
@@ -91,8 +115,8 @@ module Sprockets
     #
     #     environment['application.js']
     #
-    def [](*args)
-      find_asset(*args)
+    def [](*args, **options)
+      find_asset(*args, **options)
     end
 
     # Find asset by logical path or expanded path.

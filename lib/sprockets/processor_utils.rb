@@ -6,7 +6,7 @@ module Sprockets
   #
   # A Processor is a general function that may modify or transform an asset as
   # part of the pipeline. CoffeeScript to JavaScript conversion, Minification
-  # or Concatenation are all implemented as seperate Processor steps.
+  # or Concatenation are all implemented as separate Processor steps.
   #
   # Processors maybe any object that responds to call. So procs or a class that
   # defines a self.call method.
@@ -118,8 +118,9 @@ module Sprockets
       Symbol,
       TrueClass,
       FalseClass,
-      NilClass
-    ] + (0.class == Integer ? [Integer] : [Bignum, Fixnum])).freeze
+      NilClass,
+      Integer
+    ]).freeze
 
     # Internal: Set of all nested compound metadata types that can nest values.
     VALID_METADATA_COMPOUND_TYPES = Set.new([
@@ -161,29 +162,9 @@ module Sprockets
         if !key.instance_of?(Symbol)
           raise TypeError, "processor metadata[#{key.inspect}] expected to be a Symbol"
         end
-
-        if !valid_processor_metadata_value?(value)
-          raise TypeError, "processor metadata[:#{key}] returned a complex type: #{value.inspect}\n" +
-            "Only #{VALID_METADATA_TYPES.to_a.join(", ")} maybe used."
-        end
       end
 
       result
-    end
-
-    # Internal: Validate object is in validate metadata whitelist.
-    #
-    # value - Any Object
-    #
-    # Returns true if class is in whitelist otherwise false.
-    def valid_processor_metadata_value?(value)
-      if VALID_METADATA_VALUE_TYPES_HASH[value.class]
-        true
-      elsif VALID_METADATA_COMPOUND_TYPES_HASH[value.class]
-        value.all? { |v| valid_processor_metadata_value?(v) }
-      else
-        false
-      end
     end
   end
 end

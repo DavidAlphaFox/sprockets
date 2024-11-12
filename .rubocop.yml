@@ -1,0 +1,8 @@
+require: rubocop-performance
+AllCops:
+  DisabledByDefault: true
+  DisplayCopNames: true
+  TargetRubyVersion: 2.5
+
+Performance:
+  Enabled: true
